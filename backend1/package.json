@@ -1,0 +1,24 @@
+{
+  "name": "backend1",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "watch": "pm2 start dist/index.js -l logs.txt -i max",
+    "start": "node dist/index.js",
+    "build": "tsc",
+    "dev": "nodemon --watch src --exec ts-node ./src/index.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "nodemon": "^3.1.9",
+    "typescript": "^5.5.4"
+  },
+  "dependencies": {
+    "chess.js": "^1.0.0-beta.8",
+    "pm2": "^5.4.3",
+    "ws": "^8.18.0"
+  }
+}

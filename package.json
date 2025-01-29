@@ -1,0 +1,11 @@
+{
+  "scripts": {
+    "install": "npm install --prefix backend1",
+    "build": "npm run build --prefix backend1",
+    "backend1": "npm run watch --prefix backend1",
+    "delete-server": "pm2 delete all"
+  },
+  "dependencies": {
+    "@types/ws": "^8.5.12"
+  }
+}
