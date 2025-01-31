@@ -1,0 +1,51 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+model User{
+  id String @id @default(uuid())
+  email String
+  password String?
+  username String @unique
+  googleId String? @unique
+  authMethod AuthMethod @default(EMAIL)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  gamesAsWhite Game[]  @relation("WhitePlayer")  // Reverse of Game.whitePlayer
+  gamesAsBlack Game[]  @relation("BlackPlayer")  // Reverse of Game.blackPlayer
+  @@unique([email, authMethod], name: "email_authMethod")
+}
+
+enum AuthMethod{
+  EMAIL
+  GOOGLE
+}
+
+model Game {
+  id         String   @id @default(uuid())
+  whitePlayer User    @relation("WhitePlayer", fields: [whitePlayerId], references: [id])
+  whitePlayerId String
+  blackPlayer User    @relation("BlackPlayer", fields: [blackPlayerId], references: [id])
+  blackPlayerId String
+  createdAt  DateTime @default(now())
+  moves      Move[]
+}
+
+model Move {
+  id       String   @id @default(uuid())
+  game     Game     @relation(fields: [gameId], references: [id])
+  gameId   String
+  notation String
+  createdAt DateTime @default(now())
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}

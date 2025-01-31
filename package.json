@@ -1,11 +1,15 @@
 {
   "scripts": {
-    "install": "npm install --prefix backend1",
-    "build": "npm run build --prefix backend1",
-    "backend1": "npm run watch --prefix backend1",
+    "install-ws": "npm install --prefix ws",
+    "build-ws": "npm run build --prefix ws",
+    "ws": "npm run watch --prefix ws",
     "delete-server": "pm2 delete all"
   },
   "dependencies": {
-    "@types/ws": "^8.5.12"
+    "@types/ws": "^8.5.12",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "passport": "^0.7.0"
   }
 }

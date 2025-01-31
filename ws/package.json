@@ -9,7 +9,7 @@
     "dev": "nodemon --watch src --exec ts-node ./src/index.ts"
   },
   "keywords": [],
-  "author": "",
+  "author": "singhDevs",
   "license": "ISC",
   "description": "",
   "devDependencies": {
@@ -17,7 +17,9 @@
     "typescript": "^5.5.4"
   },
   "dependencies": {
+    "@types/jsonwebtoken": "^9.0.8",
     "chess.js": "^1.0.0-beta.8",
+    "jsonwebtoken": "^9.0.2",
     "pm2": "^5.4.3",
     "ws": "^8.18.0"
   }
