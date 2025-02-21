@@ -25,10 +25,10 @@ enum AuthMethod{
 
 model Game {
   id         String   @id @default(uuid())
-  whitePlayer User    @relation("WhitePlayer", fields: [whitePlayerId], references: [id])
-  whitePlayerId String
-  blackPlayer User    @relation("BlackPlayer", fields: [blackPlayerId], references: [id])
-  blackPlayerId String
+  whitePlayer User?    @relation("WhitePlayer", fields: [whitePlayerId], references: [id])
+  whitePlayerId String?
+  blackPlayer User?    @relation("BlackPlayer", fields: [blackPlayerId], references: [id])
+  blackPlayerId String?
   createdAt  DateTime @default(now())
   moves      Move[]
 }

@@ -1,28 +1,34 @@
 import {WebSocket} from "ws";
 import { Chess } from "chess.js";
-import {INIT_GAME, GAME_OVER, MOVE} from "./Messages"
+import {START_GAME, GAME_OVER, MOVE} from "./Messages"
 
 export class Game {
     player1: WebSocket;
     player2: WebSocket;
+    player1Username: string;
+    player2Username: string;
     private board: Chess;
     private moves: String[];
     private startTime: Date;
 
-    constructor(player1: WebSocket, player2: WebSocket) {
+    constructor(player1: WebSocket, player2: WebSocket, player1Username: string, player2Username: string) {
         this.player1 = player1;
         this.player2 = player2;
+        this.player1Username = player1Username;
+        this.player2Username = player2Username;
         this.board = new Chess();
         this.moves = [];
         this.startTime = new Date();
         this.player1.send(JSON.stringify({
-            type: INIT_GAME,
-            color: "w"
+            type: START_GAME,
+            color: 'w',
+            opponent: player2Username
             
         }))
         this.player2.send(JSON.stringify({
-            type: INIT_GAME,
-            color: "b"
+            type: START_GAME,
+            color: 'b',
+            opponent: player1Username
         }))
     }
 

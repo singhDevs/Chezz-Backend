@@ -31,6 +31,8 @@ const authUsingEmail = async (req: Request, res: Response) => {
 };
 
 const authUsingGoogle = async (req: Request, res: Response) => {
+    console.log('Request to Auth using Google received.');
+    console.log('Received req.body: ', req.body);
     try {
         const { idToken } = req.body;
         const payload = await verifyGoogleToken(idToken);
@@ -45,6 +47,8 @@ const authUsingGoogle = async (req: Request, res: Response) => {
                 JWT_SECRET,
                 60 * 60 * 24 * 7
             );  // 7 days expiry
+
+            console.log('Auth using Google done.');
 
             res.status(200)
                 .json({

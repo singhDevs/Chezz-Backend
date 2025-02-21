@@ -1,4 +1,6 @@
 {
+  "private": true,
+  "workspaces": ["backend", "ws"],
   "scripts": {
     "install-ws": "npm install --prefix ws",
     "build-ws": "npm run build --prefix ws",
