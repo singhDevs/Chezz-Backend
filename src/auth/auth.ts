@@ -1,16 +1,15 @@
-import { PrismaClient, User } from '@prisma/client';
-import bcrypt from 'bcrypt';
-import jwt, { Secret, SignOptions } from 'jsonwebtoken';
 import dotenv from 'dotenv';
+import bcrypt from 'bcrypt';
+import prismaClient from '../services/prismaClient.js';
+import jwt, { Secret, SignOptions } from 'jsonwebtoken';
 
 dotenv.config();
 
-const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET;
 
 export const registerUser = async (email: string, password: string, username: string) => {
     const hashedPassword = await bcrypt.hash(password, 10);
-    return await prisma.user.create({
+    return await prismaClient.user.create({
         data: {
             email: email,
             password: hashedPassword,
@@ -24,7 +23,7 @@ export const loginUser = async (email: string, password: string) => {
         throw new Error('JWT_SECRET is not defined!');
     }
 
-    const user = await prisma.user.findUnique({
+    const user = await prismaClient.user.findUnique({
         where: {
             email_authMethod: {
                 email: email,

@@ -30,15 +30,17 @@ model Game {
   blackPlayer User?    @relation("BlackPlayer", fields: [blackPlayerId], references: [id])
   blackPlayerId String?
   createdAt  DateTime @default(now())
-  moves      Move[]
+  moves      String?
+  status GameStatus @default(PENDING)
+  result String?
+  termination String?
 }
 
-model Move {
-  id       String   @id @default(uuid())
-  game     Game     @relation(fields: [gameId], references: [id])
-  gameId   String
-  notation String
-  createdAt DateTime @default(now())
+enum GameStatus {
+  PENDING
+  ONGOING
+  COMPLETED
+  ABANDONED
 }
 
 generator client {

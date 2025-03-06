@@ -16,7 +16,9 @@ const verifyToken = (req: Request, res: Response, next: NextFunction) => {
             if (error.name === 'TokenExpiredError') {
                 res.status(401).json({ error: 'Token expired' });
             }
-            res.status(401).json({ error: 'Invalid token' });
+            else{
+                res.status(401).json({ error: 'Invalid token' });
+            }
             return;
         }
         if (!decoded || typeof decoded !== 'object') {

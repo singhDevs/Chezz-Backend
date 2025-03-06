@@ -1,10 +1,10 @@
-import { Request, Response } from "express";
-import { Prisma, PrismaClient } from '@prisma/client';
-import { pendingGames } from "../gameStore";
 import dotenv from 'dotenv';
+import { Prisma } from "@prisma/client";
+import { Request, Response } from "express";
+import prismaClient from "../services/prismaClient.js";
+import { state, pendingGames } from "../gameStore.js";
 
 dotenv.config();
-const prisma = new PrismaClient();
 
 const joinGame = async (req: Request, res: Response) => {
     console.log("Joining game request received");
@@ -47,7 +47,7 @@ async function createOrJoinGame(userId: string): Promise<[string, number]> {
 }
 
 async function createNewGame(userId: string) {
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+    const user = await prismaClient.user.findUnique({ where: { id: userId } });
     if (user == null) {
         throw new Error("User not found!");
     }
@@ -58,13 +58,13 @@ async function createNewGame(userId: string) {
         },
         blackPlayer: undefined
     };
-    const newGame = await prisma.game.create({ data: createData });
+    const newGame = await prismaClient.game.create({ data: createData });
 
     return newGame.id;
 }
 
 async function addPlayerToExistingGame(userId: string, gameId: string) {
-    await prisma.game.update({
+    await prismaClient.game.update({
         where: {
             id: gameId
         },

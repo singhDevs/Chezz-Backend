@@ -1,4 +1,4 @@
-import { Game } from "./Game"
+import { Game } from "./Game.js"
 import { WebSocket } from "ws"
 import {INIT_GAME, MOVE} from "./Messages"
 

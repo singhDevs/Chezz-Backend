@@ -1,11 +1,10 @@
 import { Request, Response } from 'express';
-import { generateToken, loginUser } from '../auth/auth';
-import { verifyGoogleToken, findOrCreateUser } from '../auth/googleSignInAuth';
-import { PrismaClient } from '@prisma/client';
+import { generateToken, loginUser } from '../auth/auth.js';
+import { verifyGoogleToken, findOrCreateUser } from '../auth/googleSignInAuth.js';
+import prismaClient from '../services/prismaClient.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
-const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET as string;
 
 
@@ -41,7 +40,7 @@ const authUsingGoogle = async (req: Request, res: Response) => {
         }
 
         try {
-            const user = await findOrCreateUser(payload, prisma);
+            const user = await findOrCreateUser(payload, prismaClient);
             const token = generateToken(
                 user.id,
                 JWT_SECRET,

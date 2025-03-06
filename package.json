@@ -1,17 +1,39 @@
 {
-  "private": true,
-  "workspaces": ["backend", "ws"],
+  "name": "chezz",
+  "version": "1.0.0",
+  "main": "src/index.ts",
+  "type": "module",
   "scripts": {
-    "install-ws": "npm install --prefix ws",
-    "build-ws": "npm run build --prefix ws",
-    "ws": "npm run watch --prefix ws",
-    "delete-server": "pm2 delete all"
+    "start": "tsc && node dist/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "keywords": [],
+  "author": "singhDevs",
+  "license": "ISC",
+  "description": "",
   "dependencies": {
-    "@types/ws": "^8.5.12",
+    "@prisma/client": "^6.3.0",
+    "@types/jsonwebtoken": "^9.0.8",
+    "bcrypt": "^5.1.1",
+    "chess.js": "^1.0.0-beta.8",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
-    "passport": "^0.7.0"
+    "google-auth-library": "^9.15.1",
+    "jsonwebtoken": "^9.0.2",
+    "passport": "^0.7.0",
+    "passport-google-oauth20": "^2.0.0",
+    "pm2": "^5.4.3",
+    "prisma": "^6.3.0",
+    "redis": "^4.7.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^5.0.2",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/jsonwebtoken": "^9.0.8",
+    "@types/ws": "^8.5.14",
+    "nodemon": "^3.1.9"
   }
 }

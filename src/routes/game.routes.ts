@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { joinGame } from "../controllers/game.controllers";
-import { verifyToken } from "../middlewares/auth.middlewares";
+import { joinGame } from "../controllers/game.controllers.js";
+import { verifyToken } from "../middlewares/auth.middlewares.js";
 
 const router = Router();
 
