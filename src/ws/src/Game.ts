@@ -2,16 +2,19 @@ import { WebSocket } from "ws";
 import { Chess } from "chess.js";
 import { START_GAME, GAME_OVER, MOVE } from "./Messages.js"
 import redisClient from "../../services/redisClient.js";
-import { GameStatus } from "@prisma/client";
+import { GameStatus, User } from "@prisma/client";
 import prismaClient from "../../services/prismaClient.js";
 import { Timer } from "../../models/Timer.js";
 
+type UserWithoutCreds = Pick<User, "username" | "photoUrl">;
 export class Game {
     id: string;
-    player1: WebSocket;
-    player2: WebSocket;
-    player1Username: string;
-    player2Username: string;
+    gameDuration: number;
+    gameType: string;
+    player1Socket: WebSocket;
+    player2Socket: WebSocket;
+    player1: UserWithoutCreds;
+    player2: UserWithoutCreds;
     private board: Chess;
     private whiteTimer: Timer;
     private blackTimer: Timer;
@@ -19,22 +22,28 @@ export class Game {
     private passiveTimer: Timer;
     drawCount: Set<WebSocket> = new Set();
 
-    constructor(id: string, player1: WebSocket, player2: WebSocket, player1Username: string, player2Username: string, time: number) {
+    constructor(id: string, player1Socket: WebSocket, player2Socket: WebSocket, player1: UserWithoutCreds, player2: UserWithoutCreds, time: number, gameType: string) {
         this.id = id;
+        this.gameDuration = time;
+        this.gameType = gameType;
         this.board = new Chess();
+        this.player1Socket = player1Socket;
+        this.player2Socket = player2Socket;
         this.player1 = player1;
         this.player2 = player2;
-        this.player1Username = player1Username;
-        this.player2Username = player2Username;
-        this.player1.send(JSON.stringify({
+        this.player1Socket.send(JSON.stringify({
             type: START_GAME,
             color: 'w',
-            opponent: player2Username
+            opponent: player2,
+            duration: time,
+            gameType: gameType
         }));
-        this.player2.send(JSON.stringify({
+        this.player2Socket.send(JSON.stringify({
             type: START_GAME,
             color: 'b',
-            opponent: player1Username
+            opponent: player1,
+            duration: time,
+            gameType: gameType
         }));
         this.whiteTimer = new Timer(time, {
             onTimeUpdate: (time) => {
@@ -42,26 +51,11 @@ export class Game {
             },
             onTimeout: async () => {
                 console.log("White Time's up! White lost!");
-                this.player1.send(JSON.stringify({
-                    type: GAME_OVER,
-                    move: { from: "NA", to: "NA", piece: "NA" },
-                    board: JSON.stringify(this.board),
-                    result: 'b',
-                    cause: 'TIMEOUT'
-                }));
-
-                this.player2.send(JSON.stringify({
-                    type: GAME_OVER,
-                    move: { from: "NA", to: "NA", piece: "NA" },
-                    board: JSON.stringify(this.board),
-                    result: 'b',
-                    cause: 'TIMEOUT'
-                }));
-
-                this.activeTimer.clear();
-
-                //Time to store the moves in DB.
-                await this.saveMovesToDB();
+                this.declareResult(
+                    { from: "NA", to: "NA" },
+                    'b',
+                    player2.username,
+                    'TIMEOUT');
                 return;
             }
         });
@@ -71,26 +65,11 @@ export class Game {
             },
             onTimeout: async () => {
                 console.log("Black Time's up!, Black lost!");
-                this.player1.send(JSON.stringify({
-                    type: GAME_OVER,
-                    move: { from: "NA", to: "NA", piece: "NA" },
-                    board: JSON.stringify(this.board),
-                    result: 'w',
-                    cause: 'TIMEOUT'
-                }));
-
-                this.player2.send(JSON.stringify({
-                    type: GAME_OVER,
-                    move: { from: "NA", to: "NA", piece: "NA" },
-                    board: JSON.stringify(this.board),
-                    result: 'w',
-                    cause: 'TIMEOUT'
-                }));
-
-                this.activeTimer.clear();
-
-                //Time to store the moves in DB.
-                await this.saveMovesToDB();
+                this.declareResult(
+                    { from: "NA", to: "NA" },
+                    'w',
+                    player1.username,
+                    'TIMEOUT');
                 return;
             }
         });
@@ -112,10 +91,10 @@ export class Game {
         queenSideCastle: Boolean,
         kingSideCastle: Boolean
     }, piece: string) {
-        if (this.board.turn() === "w" && socket !== this.player1) {
+        if (this.board.turn() === "w" && socket !== this.player1Socket) {
             return;
         }
-        if (this.board.turn() === "b" && socket !== this.player2) {
+        if (this.board.turn() === "b" && socket !== this.player2Socket) {
             return;
         }
 
@@ -141,30 +120,46 @@ export class Game {
         }
 
         if (this.board.isStalemate()) {
-            await this.declareResult(move, 'd', 'STALEMATE');
+            await this.declareResult(
+                move,
+                's',
+                '~',
+                'STALEMATE');
             return;
         }
 
         if (this.board.isInsufficientMaterial()) {
-            await this.declareResult(move, 'd', 'INSUFFICIENT_MATERIAL');
+            await this.declareResult(
+                move,
+                'i',
+                '~',
+                'INSUFFICIENT_MATERIAL');
             return;
         }
 
         //check if the game is over
         if (this.board.isDraw()) {
-            await this.declareResult(move, 'd', 'DRAW');
+            await this.declareResult(
+                move,
+                'd',
+                '~',
+                'DRAW');
             return;
         }
 
         if (this.board.isCheckmate()) {
-            await this.declareResult(move, this.board.turn() === 'w' ? 'b' : 'w', 'CHECKMATE');
+            await this.declareResult(
+                move,
+                this.board.turn() === 'w' ? 'b' : 'w',
+                this.board.turn() === 'w' ? this.player2.username : this.player1.username,
+                'CHECKMATE');
             return;
         }
 
         //send the updated board & updated timeLeft for both the players to both the players
         if (this.board.turn() === "w") {
             console.log("White's turn, black moved piece: " + piece);
-            this.player1.send(JSON.stringify({
+            this.player1Socket.send(JSON.stringify({
                 type: MOVE,
                 move: move,
                 piece: piece,
@@ -176,7 +171,7 @@ export class Game {
         }
         else {
             console.log("Black's turn, black moved piece: " + piece);
-            this.player2.send(JSON.stringify({
+            this.player2Socket.send(JSON.stringify({
                 type: MOVE,
                 move: move,
                 piece: piece,
@@ -191,28 +186,36 @@ export class Game {
     async declareResult(move: {
         from: string,
         to: string
-    }, result: string,
+    },
+        result: string,
+        winningUser: string,
         cause: string,
-        shouldSaveMoves: boolean = true) {
-        this.player1.send(JSON.stringify({
+        shouldSaveMoves: boolean = true
+    ) {
+        this.player1Socket.send(JSON.stringify({
+            id: this.id,
             type: GAME_OVER,
             move: move,
             board: JSON.stringify(this.board),
             result: result,
-            cause: cause
+            cause: cause,
+            winningUser: winningUser
         }));
-        this.player2.send(JSON.stringify({
+        this.player2Socket.send(JSON.stringify({
+            id: this.id,
             type: GAME_OVER,
             move: move,
             board: JSON.stringify(this.board),
             result: result,
-            cause: cause
+            cause: cause,
+            winningUser: winningUser
         }));
 
         this.activeTimer.clear();
 
         //Time to store the moves in DB.
         if (shouldSaveMoves) await this.saveMovesToDB();
+        await this.addResultData(result, winningUser, cause);
     }
 
     async saveMovesToDB() {
@@ -268,11 +271,12 @@ export class Game {
         }
     }
 
-    async addResultData(result: string, termination: string) {
+    async addResultData(result: string, winningUser: string, termination: string) {
         await prismaClient.game.update({
             where: { id: this.id },
             data: {
                 result: result,
+                winningUser: winningUser,
                 termination: termination
             }
         });

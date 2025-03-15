@@ -11,6 +11,7 @@ model User{
   username String @unique
   googleId String? @unique
   authMethod AuthMethod @default(EMAIL)
+  photoUrl String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   gamesAsWhite Game[]  @relation("WhitePlayer")  // Reverse of Game.whitePlayer
@@ -31,8 +32,11 @@ model Game {
   blackPlayerId String?
   createdAt  DateTime @default(now())
   moves      String?
+  gameDuration Int?
+  gameType String?
   status GameStatus @default(PENDING)
   result String?
+  winningUser String?
   termination String?
 }
 

@@ -55,7 +55,7 @@ const gameManager = new GameManager();
 
 wss.on('connection', async function connection(ws, req) {
     ws.on('error', (error) => {
-        console.error('WebSocket error:', error);
+        console.error('WebSocket error on error:', error);
     });
 
     state.onlineUsers.push(ws);
@@ -63,8 +63,9 @@ wss.on('connection', async function connection(ws, req) {
 
     const urlParams = new URLSearchParams(req.url!.split('?')[1]);
     const gameId = urlParams.get('gameId');
+    const duration = Number(urlParams.get('duration'));
     const token = req.headers.authorization?.split(' ')[1];
-
+    let decodedToken: { userId: string } = { userId: '' };
     try {
         if (token === undefined) {
             throw new Error('Token is missing!');
@@ -72,16 +73,53 @@ wss.on('connection', async function connection(ws, req) {
         if (token === null) {
             throw new Error('Token is null!');
         }
+        if (duration === undefined) {
+            throw new Error('Duration is missing!');
+        }
         if (JWT_SECRET === undefined) {
             throw new Error('JWT_SECRET is not defined!');
         }
 
         const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
+        decodedToken = decoded;
         console.log(`${decoded.userId} has joined!`);
 
-        const userId = decoded.userId;
+        // gameManager.addUser(ws, decoded.userId);
+    } catch (error) {
+        console.log("Websocket error on connection try/catch: " + error);
+        ws.close(1008, 'Authentication failed');
+    }
 
-        const game = pendingGames.find(game => game[0] === gameId)
+
+    try {
+        const userId = decodedToken.userId;
+        console.log("Duration searching for: ", duration);
+        console.log("gameId we searching for: ", gameId);
+        const game = pendingGames.get(duration!)?.find(game => game.gameId === gameId);
+
+        pendingGames.forEach((value, key) => {
+            console.log('Key Duration: ' + key);
+            console.log('Duration: ' + duration);
+            console.log('Type of key duration: ' + typeof key);
+            console.log('Type of duration: ' + typeof duration);
+
+            if (key === duration) {
+                console.log('Duration matches');
+            }
+            else {
+                console.log('Duration does not match');
+            }
+            value.forEach(game => {
+                console.log('Game ID: ' + game.gameId);
+                console.log('User ID: ' + game.userId);
+            });
+        });
+
+        pendingGames.get(duration!)?.forEach(game => {
+            console.log('Game ID: ' + game.gameId);
+            console.log('User ID: ' + game.userId);
+        });
+
         if (game === undefined) {
             throw new Error('Game not found!');
         }
@@ -90,51 +128,74 @@ wss.on('connection', async function connection(ws, req) {
          * Game is only created  when the Player 2 joins.
          */
 
-        if (userId == game[1]) {
-            const foundGame = pendingGames.find(game => game[0] === gameId);
-            if (foundGame && userId == foundGame[1]) {
-                foundGame[2] = ws;
+        if (userId == game.userId) {
+            const foundGame = pendingGames.get(duration!)?.find(game => game.gameId === gameId);
+            if (foundGame && userId == foundGame.userId) {
+                foundGame.ws = ws;
             }
             console.log(userId + 'has joined the game. A pending game has been created.');
         }
         else {
-            pendingGames.splice(pendingGames.indexOf(game), 1);
-            const player1 = await prismaClient.user.findUnique({ where: { id: game[1] } });
-            const player2 = await prismaClient.user.findUnique({ where: { id: userId } });
-
-            if (player1 === null || player2 === null) {
-                console.log('Player1 and Player2 not found, setting up game with user IDs...');
-                games.push(
-                    new Game(
-                        game[0],
-                        game[2]!,
-                        ws,
-                        game[1],
-                        userId,
-                        5 * 60 * 1000)
-                ); // Start Game message is sent to both the players when new Game is created.
+            const index = pendingGames.get(duration!)?.indexOf(game);
+            if (index === undefined) {
+                console.log('Index is undefined at line 104.');
             }
             else {
+                pendingGames.get(duration!)?.splice(index, 1);
+                const player1 = await prismaClient.user.findUnique({
+                    where: { id: game.userId },
+                    omit: {
+                        email: true,
+                        password: true
+                    }
+                });
+                const player2 = await prismaClient.user.findUnique({
+                    where: { id: userId },
+                    omit: {
+                        email: true,
+                        password: true
+                    }
+                });
+
+                if (player1 === null || player2 === null) {
+                    console.error('Player1 or Player2 not found!');
+                    throw new Error('Player1 or Player2 not found!');
+                }
+
+                let gameType = "";
+                if (duration === 1 * 60 * 1000) 
+                    gameType = "Bullet";
+                else if (duration === 3 * 60 * 1000 || duration === 5 * 60 * 1000)
+                    gameType = "Blitz";
+                else
+                    gameType = "Rapid";
+
                 games.push(
                     new Game(
-                        game[0],
-                        game[2]!,
+                        game.gameId,
+                        game.ws!,
                         ws,
-                        player1?.username,
-                        player2?.username,
-                        5 * 60 * 1000)
-                );
+                        player1,
+                        player2,
+                        duration,
+                        gameType
+                    )
+                ); // Start Game message is sent to both the players when new Game is created.
+
+                await prismaClient.game.update({
+                    where: { id: game.gameId },
+                    data: {
+                        gameType: gameType
+                    }
+                });
+                console.log(userId + 'has joined the game. An existing game found. Starting game...');
             }
-            console.log(userId + 'has joined the game. An existing game found. Starting game...');
         }
         addMessageHandler(ws);
-
-
-        // gameManager.addUser(ws, decoded.userId);
     } catch (error) {
-        console.log("Websocket error: " + error);
-        ws.close(1008, 'Authentication failed');
+        console.log('Error in game creation/joining: ' + error);
     }
+
 
     ws.on("close", () => {
         console.log('User disconnected');
@@ -142,12 +203,17 @@ wss.on('connection', async function connection(ws, req) {
         //TODO: stop the timers!
 
 
-        const index = pendingGames.findIndex(game => game[2] === ws);
-        if (index !== -1) {
-            pendingGames.splice(index, 1);
+        const index = pendingGames.get(duration!)?.findIndex(game => game.ws === ws);
+        if (index === undefined) {
+            console.log('Index is undefined at line 154.');
         }
-        if (state.onlineUsers.length > 0) {
-            state.onlineUsers = state.onlineUsers.filter(socket => socket !== ws);
+        else {
+            if (index !== -1) {
+                pendingGames.get(duration!)?.splice(index, 1);
+            }
+            if (state.onlineUsers.length > 0) {
+                state.onlineUsers = state.onlineUsers.filter(socket => socket !== ws);
+            }
         }
 
 
@@ -159,7 +225,7 @@ wss.on('connection', async function connection(ws, req) {
 function addMessageHandler(socket: WebSocket) {
     socket.on("message", async (data) => {
         const message = JSON.parse(data.toString())
-        const game = games.find(game => game.player1 === socket || game.player2 === socket)
+        const game = games.find(game => game.player1Socket === socket || game.player2Socket === socket)
         if (message.type === MOVE) {
             if (game) {
                 console.log('Move received: ' + message.piece + message.move.from + message.move.to);
@@ -169,16 +235,17 @@ function addMessageHandler(socket: WebSocket) {
         else if (message.type === RESIGN) {
             console.log('Resign received');
             if (game) {
-                let result = game.player1 === socket ? '0-1' : '1-0';
-                let termination = `${game.player1 === socket ? game.player1Username : game.player2Username} resigned`
+                let result = game.player1Socket === socket ? '0-1' : '1-0';
+                let termination = `${game.player1Socket === socket ? game.player1.username : game.player2.username} resigned`
 
                 await game.saveMovesToDB();
-                await game.addResultData(result, termination);
+                await game.addResultData(result, `${game.player1Socket === socket ? game.player1.username : game.player2.username}`, termination);
                 games.splice(games.indexOf(game), 1);
                 await game.declareResult(
                     { from: '', to: '' },
-                    'r',
-                    `${game.player1 === socket ? game.player1Username : game.player2Username} resigned`,
+                    (game.player1Socket === socket) ? 'b' : 'w',
+                    `${game.player1Socket === socket ? game.player2.username : game.player1.username}`,
+                    `${game.player1Socket === socket ? game.player1.username : game.player2.username} resigned`,
                     false
                 );
             }
@@ -188,14 +255,14 @@ function addMessageHandler(socket: WebSocket) {
             if (game) {
                 if (game.drawCount.size === 0) {
                     game.drawCount.add(socket);
-                    if (game.player1 === socket) {
-                        game.player2.send(JSON.stringify({
+                    if (game.player1Socket === socket) {
+                        game.player2Socket.send(JSON.stringify({
                             type: DRAW_REQUESTED,
                             message: 'DRAW requested'
                         }));
                     }
-                    else{
-                        game.player1.send(JSON.stringify({
+                    else {
+                        game.player1Socket.send(JSON.stringify({
                             type: DRAW_REQUESTED,
                             message: 'DRAW requested'
                         }));
@@ -209,11 +276,12 @@ function addMessageHandler(socket: WebSocket) {
                         let termination = `Draw by agreement`;
 
                         game.saveMovesToDB();
-                        game.addResultData(result, termination);
+                        game.addResultData(result, '~', termination);
                         games.splice(games.indexOf(game), 1);
                         game.declareResult(
                             { from: '', to: '' },
                             'd',
+                            '~',
                             'Draw by agreement'
                         );
                     }

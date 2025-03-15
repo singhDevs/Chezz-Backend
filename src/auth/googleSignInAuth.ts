@@ -25,6 +25,13 @@ export const findOrCreateUser = async (payload: TokenPayload, prisma: PrismaClie
                 { email: payload.email, authMethod: 'GOOGLE' },
                 { googleId: payload.sub }
             ]
+        },
+        omit: {
+            password: true,
+            authMethod: true,
+            googleId: true,
+            createdAt: true,
+            updatedAt: true,
         }
     })
     if (existingUser) return existingUser;
@@ -47,7 +54,15 @@ export const findOrCreateUser = async (payload: TokenPayload, prisma: PrismaClie
             email: payload.email,
             googleId: payload.sub,
             username: username,
-            authMethod: 'GOOGLE'
+            authMethod: 'GOOGLE',
+            photoUrl: payload.picture
+        },
+        omit: {
+            password: true,
+            authMethod: true,
+            googleId: true,
+            createdAt: true,
+            updatedAt: true,
         }
     })
 };

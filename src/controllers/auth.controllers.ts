@@ -53,11 +53,7 @@ const authUsingGoogle = async (req: Request, res: Response) => {
                 .json({
                     token,
                     message: 'User logged in successfully via Google!',
-                    user: {
-                        id: user.id,
-                        email: user.email,
-                        username: user.username
-                    }
+                    user: user
                 });
         } catch (error) {
             throw new Error('Error finding or creating user! Invalid Payload is the possible culprit.\n' + error);
