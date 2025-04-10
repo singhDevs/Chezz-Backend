@@ -1,7 +1,8 @@
 import dotenv from 'dotenv';
-import { Prisma } from "@prisma/client";
+import { Game, Prisma } from "@prisma/client";
 import { Request, Response } from "express";
 import prismaClient from "../services/prismaClient.js";
+import { GameType, GameMode } from '@prisma/client';
 import { state, pendingGames, PendingGame } from "../gameStore.js";
 
 dotenv.config();
@@ -10,6 +11,8 @@ const joinGame = async (req: Request, res: Response) => {
     console.log("Joining game request received");
     try {
         const userId = req.user.id;
+        const gameType = req.body.gameType as GameType;
+        const gameMode = req.body.gameMode as GameMode;
         const token = req.headers['x-validation-token'] as string;
         const duration = req.body.duration;
         console.log("Duration: ", duration);
@@ -23,7 +26,7 @@ const joinGame = async (req: Request, res: Response) => {
             return;
         }
 
-        const game: [string, number] = await createOrJoinGame(userId, duration);
+        const game: [string, number] = await createOrJoinGame(userId, duration, gameMode, gameType);
 
         res.status(200)
             .json({
@@ -36,12 +39,18 @@ const joinGame = async (req: Request, res: Response) => {
     }
 };
 
-async function createOrJoinGame(userId: string, duration: number): Promise<[string, number]> {
+async function createOrJoinGame(userId: string, duration: number, gameMode: GameMode, gameType: GameType): Promise<[string, number]> {
     console.log("Creating or Joining game...");
+    const pendingGamesMap = pendingGames.get(gameMode)!.get(gameType);
 
-    if (pendingGames.get(duration)?.length !== undefined && pendingGames.get(duration)?.length! > 0) {
-        const length = pendingGames.get(duration)?.length! - 1;
-        const game = pendingGames.get(duration)?.at(length);
+    if (pendingGamesMap === undefined) {
+        console.log("Pending games map is undefined!");
+        throw new Error("Pending games map is undefined!");
+    }
+
+    if (pendingGamesMap!.get(duration)?.length !== undefined && pendingGamesMap!.get(duration)?.length! > 0) {
+        const length = pendingGamesMap!.get(duration)?.length! - 1;
+        const game = pendingGamesMap!.get(duration)?.at(length);
         await addPlayerToExistingGame(userId, game!.gameId);
 
         return [game!.gameId, 0];    //returning the gameID, 0 for New Game, 1 for Joining existing game
@@ -53,18 +62,37 @@ async function createOrJoinGame(userId: string, duration: number): Promise<[stri
             gameId: gameId,
             userId: userId
         }
-        if(pendingGames.get(duration) === undefined){
-            pendingGames.set(duration, []);
-            pendingGames.get(duration)!.push(newGame);
+        if (pendingGamesMap!.get(duration) === undefined) {
+            pendingGamesMap!.set(duration, []);
+            pendingGamesMap!.get(duration)!.push(newGame);
             console.log("duration is undefined, created new array and pushed the game");
-            console.log(pendingGames.get(duration));
+            console.log(pendingGamesMap!.get(duration));
         }
-        else{
-            pendingGames.get(duration)!.push(newGame);
+        else {
+            pendingGamesMap!.get(duration)!.push(newGame);
             console.log("duration is defined, pushed the game");
         }
         return [gameId, 1];     //returning the gameID, 0 for New Game, 1 for Joining existing game
     }
+}
+
+async function createOrGetRatings(userId: string) {
+    let rating = await prismaClient.rating.findUnique({
+        where: {
+            userId: userId
+        }
+    });
+
+    if (!rating) {
+        rating = await prismaClient.rating.create({
+            data: {
+                user: {
+                    connect: { id: userId }
+                }
+            }
+        });
+    }
+    return rating;
 }
 
 async function createNewGame(userId: string, duration: number) {
@@ -98,14 +126,32 @@ async function addPlayerToExistingGame(userId: string, gameId: string) {
     })
 }
 
+async function deleteGameIfRequired(gameId: string) {
+    const game = await prismaClient.game.findUnique({
+        where: {
+            id: gameId
+        }
+    });
+    if (game) {
+        if (game.whitePlayerId === null || game.blackPlayerId === null) {
+            await prismaClient.game.delete({
+                where: {
+                    id: gameId
+                }
+            });
+            console.log("Game deleted successfully!");
+        }
+    }
+}
+
 async function getGames(req: Request, res: Response) {
     try {
         const userId = req.user.id;
         const games = await prismaClient.game.findMany({
-            where:{
-                OR:[
-                    {whitePlayerId: userId},
-                    {blackPlayerId: userId}
+            where: {
+                OR: [
+                    { whitePlayerId: userId },
+                    { blackPlayerId: userId }
                 ]
             },
             include: {
@@ -125,26 +171,25 @@ async function getGames(req: Request, res: Response) {
         })
 
         games.sort((gameA, gameB) => gameB.createdAt.getTime() - gameA.createdAt.getTime());
-        const games10 = games.slice(0, 10);
 
-        console.log("Games: ", games10);
-        if(games) res.status(200).json({games: games10});
-        else res.status(404).json({error: "No games found"});
+        console.log("Games: ", games);
+        if (games) res.status(200).json({ games: games });
+        else res.status(404).json({ error: "No games found" });
     } catch (error) {
         console.log("Error in game.contollers: ", error);
         res.status(500).send(error);
     }
 }
 
-async function getPGN(req: Request, res: Response): Promise<void>{
+async function getPGN(req: Request, res: Response): Promise<void> {
     console.log("Fetching PGN...");
     const gameId = req.query.gameId as string;
-    if(!gameId){
-        res.status(400).json({error: "Missing gameId query!"});
+    if (!gameId) {
+        res.status(400).json({ error: "Missing gameId query!" });
         return;
     }
 
-    try{
+    try {
         const game = await prismaClient.game.findUnique({
             where: {
                 id: gameId
@@ -154,48 +199,51 @@ async function getPGN(req: Request, res: Response): Promise<void>{
                 blackPlayer: true
             }
         });
-        if(!game){
-            res.status(404).json({error: "Game  not found with the given gameId!"});
+        if (!game) {
+            res.status(404).json({ error: "Game  not found with the given gameId!" });
             return;
         }
 
         let result = "";
-        if(game.result === 'w') result = "1-0" 
-        else if(game.result === 'b') result = "0-1" 
+        if (game.result === 'w') result = "1-0"
+        else if (game.result === 'b') result = "0-1"
         else result = "1/2-1/2";
 
         let pgn = "";
         pgn += `[Event "${game.whitePlayer?.username} vs ${game.blackPlayer?.username}"]\n`
         pgn += `[Site "Chezz"]\n`;
         pgn += `[Date "${game.createdAt.toLocaleDateString()}"]\n`;
+        pgn += `[GameMode "${game.gameMode}"]\n`;
         pgn += `[GameType "${game.gameType}"]\n`;
         pgn += `[White "${game.whitePlayer?.username}"]\n`;
         pgn += `[Black "${game.blackPlayer?.username}"]\n`;
         pgn += `[Result "${result}"]\n`;
-        pgn += `[TimeControl "${(game.gameDuration)!/1000}"]\n`;
+        pgn += `[TimeControl "${(game.gameDuration)! / 1000}"]\n`;
         pgn += `[Termination "${game.termination}"]\n\n`;
 
         game.moves?.split(" ").forEach((move, index) => {
-            if((index + 1) % 2 === 0){
+            if ((index + 1) % 2 === 0) {
                 pgn += ` ${move} `
             }
-            else{
-                pgn += `${index/2 + 1}. ${move} `
+            else {
+                pgn += `${index / 2 + 1}. ${move} `
             }
         });
         pgn += `${result}`;
 
         console.log(`PGN:\n` + pgn);
-        res.status(200).json({pgn: pgn});
+        res.status(200).json({ pgn: pgn });
     }
-    catch(error){
+    catch (error) {
         console.log("Error in game.contollers: ", error);
-        res.status(500).json({error: `Error while fetching PGN: ${error}`});
+        res.status(500).json({ error: `Error while fetching PGN: ${error}` });
     }
 }
 
 export {
     joinGame,
     getGames,
-    getPGN
+    deleteGameIfRequired,
+    getPGN,
+    createOrGetRatings
 };

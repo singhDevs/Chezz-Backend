@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { OAuth2Client, TokenPayload } from "google-auth-library";
 import dotenv from 'dotenv';
+import { createOrGetRatings } from "../controllers/game.controllers.js";
 
 dotenv.config();
 
@@ -26,12 +27,24 @@ export const findOrCreateUser = async (payload: TokenPayload, prisma: PrismaClie
                 { googleId: payload.sub }
             ]
         },
-        omit: {
-            password: true,
-            authMethod: true,
-            googleId: true,
+        select: {
+            id: true,
+            email: true,
+            username: true,
+            photoUrl: true,
             createdAt: true,
-            updatedAt: true,
+            ratings: {
+                select: {
+                    bulletRating: true,
+                    blitzRating: true,
+                    rapidRating: true
+                }
+            },
+            totalGames: true,
+            totalWins: true,
+            totalLosses: true,
+            totalDraws: true,
+            totalTimePlayed: true,
         }
     })
     if (existingUser) return existingUser;
@@ -49,20 +62,47 @@ export const findOrCreateUser = async (payload: TokenPayload, prisma: PrismaClie
         username = `${baseUsername}${counter++}`;
     }
 
-    return await prisma.user.create({
+
+    const user = await prisma.user.create({
         data: {
             email: payload.email,
             googleId: payload.sub,
             username: username,
             authMethod: 'GOOGLE',
             photoUrl: payload.picture
-        },
-        omit: {
-            password: true,
-            authMethod: true,
-            googleId: true,
-            createdAt: true,
-            updatedAt: true,
         }
     })
+
+    const rating = await createOrGetRatings(user.id);
+    await prisma.user.update({
+        where: { id: user.id },
+        data: {
+            ratings: {
+                connect: { userId: rating.userId }
+            }
+        }
+    });
+
+    return await prisma.user.findUnique({
+        where: { id: user.id },
+        select: {
+            id: true,
+            email: true,
+            username: true,
+            photoUrl: true,
+            createdAt: true,
+            ratings: {
+                select: {
+                    bulletRating: true,
+                    blitzRating: true,
+                    rapidRating: true
+                }
+            },
+            totalGames: true,
+            totalWins: true,
+            totalLosses: true,
+            totalDraws: true,
+            totalTimePlayed: true,
+        }
+    });
 };

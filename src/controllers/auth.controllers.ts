@@ -3,6 +3,7 @@ import { generateToken, loginUser } from '../auth/auth.js';
 import { verifyGoogleToken, findOrCreateUser } from '../auth/googleSignInAuth.js';
 import prismaClient from '../services/prismaClient.js';
 import dotenv from 'dotenv';
+import { createOrGetRatings } from './game.controllers.js';
 
 dotenv.config();
 const JWT_SECRET = process.env.JWT_SECRET as string;
@@ -16,12 +17,7 @@ const authUsingEmail = async (req: Request, res: Response) => {
             .json({
                 token,
                 message: 'User logged in successfully via Email!',
-                user: {
-                    id: user.id,
-                    email: user.email,
-                    username: user.username,
-                    authMethod: user.authMethod
-                }
+                user: user
             });
     } catch (error: any) {
         res.status(401)
@@ -41,6 +37,10 @@ const authUsingGoogle = async (req: Request, res: Response) => {
 
         try {
             const user = await findOrCreateUser(payload, prismaClient);
+            if (user === undefined || user === null) {
+                throw new Error('User not found!');
+            }
+
             const token = generateToken(
                 user.id,
                 JWT_SECRET,
@@ -64,7 +64,7 @@ const authUsingGoogle = async (req: Request, res: Response) => {
     }
 };
 
-export{
+export {
     authUsingEmail,
     authUsingGoogle
 };

@@ -2,15 +2,24 @@ import { WebSocket } from "ws";
 import { Chess } from "chess.js";
 import { START_GAME, GAME_OVER, MOVE } from "./Messages.js"
 import redisClient from "../../services/redisClient.js";
-import { GameStatus, User } from "@prisma/client";
+import { GameMode, GameStatus, Rating, ResultType as PrismaResultType } from "@prisma/client";
 import prismaClient from "../../services/prismaClient.js";
 import { Timer } from "../../models/Timer.js";
+import { GameType } from '@prisma/client';
+import { updateRatings, ResultType as GlickoResultType } from "glicko2-ts";
 
-type UserWithoutCreds = Pick<User, "username" | "photoUrl">;
+type UserWithoutCreds = {
+    id: string;
+    username: string;
+    photoUrl: string | null;
+    ratings?: Rating | null;
+};
+
 export class Game {
     id: string;
     gameDuration: number;
-    gameType: string;
+    gameType: GameType;
+    gameMode: GameMode;
     player1Socket: WebSocket;
     player2Socket: WebSocket;
     player1: UserWithoutCreds;
@@ -22,10 +31,11 @@ export class Game {
     private passiveTimer: Timer;
     drawCount: Set<WebSocket> = new Set();
 
-    constructor(id: string, player1Socket: WebSocket, player2Socket: WebSocket, player1: UserWithoutCreds, player2: UserWithoutCreds, time: number, gameType: string) {
+    constructor(id: string, player1Socket: WebSocket, player2Socket: WebSocket, player1: UserWithoutCreds, player2: UserWithoutCreds, time: number, gameMode: GameMode, gameType: GameType) {
         this.id = id;
         this.gameDuration = time;
         this.gameType = gameType;
+        this.gameMode = gameMode;
         this.board = new Chess();
         this.player1Socket = player1Socket;
         this.player2Socket = player2Socket;
@@ -53,7 +63,7 @@ export class Game {
                 console.log("White Time's up! White lost!");
                 this.declareResult(
                     { from: "NA", to: "NA" },
-                    'b',
+                    GlickoResultType.BLACK,
                     player2.username,
                     'TIMEOUT');
                 return;
@@ -67,7 +77,7 @@ export class Game {
                 console.log("Black Time's up!, Black lost!");
                 this.declareResult(
                     { from: "NA", to: "NA" },
-                    'w',
+                    GlickoResultType.WHITE,
                     player1.username,
                     'TIMEOUT');
                 return;
@@ -122,7 +132,7 @@ export class Game {
         if (this.board.isStalemate()) {
             await this.declareResult(
                 move,
-                's',
+                GlickoResultType.DRAW,
                 '~',
                 'STALEMATE');
             return;
@@ -131,7 +141,7 @@ export class Game {
         if (this.board.isInsufficientMaterial()) {
             await this.declareResult(
                 move,
-                'i',
+                GlickoResultType.DRAW,
                 '~',
                 'INSUFFICIENT_MATERIAL');
             return;
@@ -141,7 +151,7 @@ export class Game {
         if (this.board.isDraw()) {
             await this.declareResult(
                 move,
-                'd',
+                GlickoResultType.DRAW,
                 '~',
                 'DRAW');
             return;
@@ -150,7 +160,7 @@ export class Game {
         if (this.board.isCheckmate()) {
             await this.declareResult(
                 move,
-                this.board.turn() === 'w' ? 'b' : 'w',
+                this.board.turn() === 'w' ? GlickoResultType.BLACK : GlickoResultType.WHITE,
                 this.board.turn() === 'w' ? this.player2.username : this.player1.username,
                 'CHECKMATE');
             return;
@@ -187,35 +197,62 @@ export class Game {
         from: string,
         to: string
     },
-        result: string,
+        result: GlickoResultType,
         winningUser: string,
         cause: string,
         shouldSaveMoves: boolean = true
     ) {
+        this.activeTimer.clear();
+        let updatedRatings = null;
+        if (this.gameMode === GameMode.RATED) {
+            updatedRatings = await this.updateRatingdata(result);
+            if (updatedRatings === undefined || updatedRatings === null) {
+                console.log("Error in receiving updating ratings, skipping returning updated Users.");
+            }
+            else {
+                // Updating user data
+                await this.updateUserData(this.player1, 'w', updatedRatings.player1Rating, result, winningUser);
+                await this.updateUserData(this.player2, 'b', updatedRatings.player2Rating, result, winningUser);
+            }
+        }
+
+        //Time to store the moves in DB.
+        if (shouldSaveMoves) await this.saveMovesToDB();
+        await this.addResultData(result, winningUser, cause);
+
         this.player1Socket.send(JSON.stringify({
             id: this.id,
             type: GAME_OVER,
             move: move,
             board: JSON.stringify(this.board),
-            result: result,
+            result: this.mapResult(result),
             cause: cause,
-            winningUser: winningUser
+            winningUser: winningUser,
+            updatedRatings: updatedRatings?.player1Rating
         }));
         this.player2Socket.send(JSON.stringify({
             id: this.id,
             type: GAME_OVER,
             move: move,
             board: JSON.stringify(this.board),
-            result: result,
+            result: this.mapResult(result),
             cause: cause,
-            winningUser: winningUser
+            winningUser: winningUser,
+            updatedRatings: updatedRatings?.player2Rating
         }));
+    }
 
-        this.activeTimer.clear();
-
-        //Time to store the moves in DB.
-        if (shouldSaveMoves) await this.saveMovesToDB();
-        await this.addResultData(result, winningUser, cause);
+    async updateUserData(player: UserWithoutCreds, playerColor: string, playerRating: { bulletRating: number; blitzRating: number; rapidRating: number; }, result: GlickoResultType, winningUser: string) {
+        await prismaClient.user.update({
+            where: { id: player.id },
+            data: {
+                totalGames: { increment: 1 },
+                totalWins: { increment: (result === GlickoResultType.WHITE && playerColor === 'w') ? 1 : (result === GlickoResultType.BLACK && playerColor === 'b') ? 1 : 0 },
+                totalLosses: { increment: (result === GlickoResultType.WHITE && playerColor === 'b') ? 1 : (result === GlickoResultType.BLACK && playerColor === 'w') ? 1 : 0 },
+                totalDraws: { increment: result === GlickoResultType.DRAW ? 1 : 0 },
+                totalTimePlayed: { increment: Math.abs(this.gameDuration - (this.activeTimer.timeLeft / 1000)) / 60 } //in minutes
+            }
+        });
     }
 
     async saveMovesToDB() {
@@ -271,14 +308,177 @@ export class Game {
         }
     }
 
-    async addResultData(result: string, winningUser: string, termination: string) {
+    async updateRatingdata(result: GlickoResultType) {
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0'); // Months are zero-indexed
+        const day = String(today.getDate()).padStart(2, '0');
+        const formattedDate = `${year}-${month}-${day}`;
+
+        if (this.gameType === GameType.BULLET) {
+            if (this.player1.ratings!.lastBulletGameDate === null || this.player1.ratings!.lastBulletGameDate === undefined) {
+                this.player1.ratings!.lastBulletGameDate = new Date(formattedDate);
+            }
+            if (this.player2.ratings!.lastBulletGameDate === null || this.player2.ratings!.lastBulletGameDate === undefined) {
+                this.player2.ratings!.lastBulletGameDate = new Date(formattedDate);
+            }
+
+            const player1Rating = { rating: this.player1.ratings!.bulletRating, rd: this.player1.ratings!.bulletRD, volatility: this.player1.ratings!.bulletVolatility, lastGameTime: this.player1.ratings!.lastBulletGameDate };
+            const player2Rating = { rating: this.player2.ratings!.bulletRating, rd: this.player2.ratings!.bulletRD, volatility: this.player2.ratings!.bulletVolatility, lastGameTime: this.player2.ratings!.lastBulletGameDate };
+
+            const newRatings = await updateRatings(player1Rating, player2Rating, result, new Date());
+            newRatings.newRatingWhite.rating = Math.ceil(newRatings.newRatingWhite.rating);
+            newRatings.newRatingBlack.rating = Math.ceil(newRatings.newRatingBlack.rating);
+
+            await this.saveNewRatings(
+                {
+                    bulletRating: newRatings.newRatingWhite.rating,
+                    bulletRD: newRatings.newRatingWhite.rd,
+                    bulletVolatility: newRatings.newRatingWhite.volatility,
+                    lastBulletGameDate: this.player1.ratings!.lastBulletGameDate,
+                },
+                {
+                    bulletRating: newRatings.newRatingBlack.rating,
+                    bulletRD: newRatings.newRatingBlack.rd,
+                    bulletVolatility: newRatings.newRatingBlack.volatility,
+                    lastBulletGameDate: this.player2.ratings!.lastBulletGameDate,
+                }
+            );
+            return {
+                player1Rating: {
+                    bulletRating: newRatings.newRatingWhite.rating,
+                    blitzRating: this.player1.ratings!.blitzRating,
+                    rapidRating: this.player1.ratings!.rapidRating,
+                },
+                player2Rating: {
+                    bulletRating: newRatings.newRatingBlack.rating,
+                    blitzRating: this.player2.ratings!.blitzRating,
+                    rapidRating: this.player2.ratings!.rapidRating,
+                }
+            };
+        }
+        else if (this.gameType === GameType.BLITZ) {
+            if (this.player1.ratings!.lastBlitzGameDate === null || this.player1.ratings!.lastBlitzGameDate === undefined) {
+                this.player1.ratings!.lastBlitzGameDate = new Date(formattedDate);
+            }
+            if (this.player2.ratings!.lastBlitzGameDate === null || this.player2.ratings!.lastBlitzGameDate === undefined) {
+                this.player2.ratings!.lastBlitzGameDate = new Date(formattedDate);
+            }
+
+            const player1Rating = { rating: this.player1.ratings!.blitzRating, rd: this.player1.ratings!.blitzRD, volatility: this.player1.ratings!.blitzVolatility, lastGameTime: this.player1.ratings!.lastBlitzGameDate };
+            const player2Rating = { rating: this.player2.ratings!.blitzRating, rd: this.player2.ratings!.blitzRD, volatility: this.player2.ratings!.blitzVolatility, lastGameTime: this.player2.ratings!.lastBlitzGameDate };
+
+            const newRatings = await updateRatings(player1Rating, player2Rating, result, new Date());
+            newRatings.newRatingWhite.rating = Math.ceil(newRatings.newRatingWhite.rating);
+            newRatings.newRatingBlack.rating = Math.ceil(newRatings.newRatingBlack.rating);
+
+            await this.saveNewRatings(
+                {
+                    blitzRating: newRatings.newRatingWhite.rating,
+                    blitzRD: newRatings.newRatingWhite.rd,
+                    blitzVolatility: newRatings.newRatingWhite.volatility,
+                    lastBlitzGameDate: this.player1.ratings!.lastBlitzGameDate,
+                },
+                {
+                    blitzRating: newRatings.newRatingBlack.rating,
+                    blitzRD: newRatings.newRatingBlack.rd,
+                    blitzVolatility: newRatings.newRatingBlack.volatility,
+                    lastBlitzGameDate: this.player2.ratings!.lastBlitzGameDate,
+                }
+            );
+            return {
+                player1Rating: {
+                    bulletRating: this.player1.ratings!.bulletRating,
+                    blitzRating: newRatings.newRatingWhite.rating,
+                    rapidRating: this.player1.ratings!.rapidRating,
+                },
+                player2Rating: {
+                    bulletRating: this.player2.ratings!.bulletRating,
+                    blitzRating: newRatings.newRatingBlack.rating,
+                    rapidRating: this.player2.ratings!.rapidRating,
+                }
+            };
+        }
+        else {
+            if (this.player1.ratings!.lastRapidGameDate === null || this.player1.ratings!.lastRapidGameDate === undefined) {
+                this.player1.ratings!.lastRapidGameDate = new Date(formattedDate);
+            }
+            if (this.player2.ratings!.lastRapidGameDate === null || this.player2.ratings!.lastRapidGameDate === undefined) {
+                this.player2.ratings!.lastRapidGameDate = new Date(formattedDate);
+            }
+
+            const player1Rating = { rating: this.player1.ratings!.rapidRating, rd: this.player1.ratings!.rapidRD, volatility: this.player1.ratings!.rapidVolatility, lastGameTime: this.player1.ratings!.lastRapidGameDate };
+            const player2Rating = { rating: this.player2.ratings!.rapidRating, rd: this.player2.ratings!.rapidRD, volatility: this.player2.ratings!.rapidVolatility, lastGameTime: this.player2.ratings!.lastRapidGameDate };
+
+            const newRatings = await updateRatings(player1Rating, player2Rating, result, new Date());
+            newRatings.newRatingWhite.rating = Math.ceil(newRatings.newRatingWhite.rating);
+            newRatings.newRatingBlack.rating = Math.ceil(newRatings.newRatingBlack.rating);
+
+            await this.saveNewRatings(
+                {
+                    rapidRating: newRatings.newRatingWhite.rating,
+                    rapidRD: newRatings.newRatingWhite.rd,
+                    rapidVolatility: newRatings.newRatingWhite.volatility,
+                    lastRapidGameDate: this.player1.ratings!.lastRapidGameDate,
+                },
+                {
+                    rapidRating: newRatings.newRatingBlack.rating,
+                    rapidRD: newRatings.newRatingBlack.rd,
+                    rapidVolatility: newRatings.newRatingBlack.volatility,
+                    lastRapidGameDate: this.player2.ratings!.lastRapidGameDate,
+                }
+            );
+            return {
+                player1Rating: {
+                    bulletRating: this.player1.ratings!.bulletRating,
+                    blitzRating: this.player1.ratings!.blitzRating,
+                    rapidRating: newRatings.newRatingWhite.rating,
+                },
+                player2Rating: {
+                    bulletRating: this.player2.ratings!.bulletRating,
+                    blitzRating: this.player2.ratings!.blitzRating,
+                    rapidRating: newRatings.newRatingBlack.rating,
+                }
+            };
+        }
+    }
+
+    async saveNewRatings(player1RatingData: any, player2RatingData: any) {
+        await prismaClient.rating.update({
+            where: {
+                userId: this.player1.ratings!.userId
+            },
+            data: player1RatingData
+        });
+        await prismaClient.rating.update({
+            where: {
+                userId: this.player2.ratings!.userId
+            },
+            data: player2RatingData
+        });
+    }
+
+    async addResultData(result: GlickoResultType, winningUser: string, termination: string) {
         await prismaClient.game.update({
             where: { id: this.id },
             data: {
-                result: result,
+                result: this.mapResult(result),
                 winningUser: winningUser,
                 termination: termination
             }
         });
+    }
+
+    mapResult(result: GlickoResultType): PrismaResultType {
+        switch (result) {
+            case GlickoResultType.WHITE:
+                return PrismaResultType.WHITE;
+            case GlickoResultType.BLACK:
+                return PrismaResultType.BLACK;
+            case GlickoResultType.DRAW:
+                return PrismaResultType.DRAW;
+            default:
+                throw new Error("Invalid result type");
+        }
     }
 }

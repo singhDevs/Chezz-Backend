@@ -4,40 +4,85 @@
 // Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
-model User{
-  id String @id @default(uuid())
-  email String
-  password String?
-  username String @unique
-  googleId String? @unique
-  authMethod AuthMethod @default(EMAIL)
-  photoUrl String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  gamesAsWhite Game[]  @relation("WhitePlayer")  // Reverse of Game.whitePlayer
-  gamesAsBlack Game[]  @relation("BlackPlayer")  // Reverse of Game.blackPlayer
+model User {
+  id           String     @id @default(uuid())
+  email        String
+  password     String?
+  username     String     @unique
+  googleId     String?    @unique
+  authMethod   AuthMethod @default(EMAIL)
+  photoUrl     String?
+  ratings       Rating?    @relation("UserRating")
+  totalGames   Int        @default(0)
+  totalWins    Int        @default(0)
+  totalLosses  Int        @default(0)
+  totalDraws   Int        @default(0)
+  totalTimePlayed Int     @default(0)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  gamesAsWhite Game[]     @relation("WhitePlayer") // Reverse of Game.whitePlayer
+  gamesAsBlack Game[]     @relation("BlackPlayer") // Reverse of Game.blackPlayer
+
   @@unique([email, authMethod], name: "email_authMethod")
 }
 
-enum AuthMethod{
+model Game {
+  id            String     @id @default(uuid())
+  whitePlayer   User?      @relation("WhitePlayer", fields: [whitePlayerId], references: [id])
+  whitePlayerId String?
+  blackPlayer   User?      @relation("BlackPlayer", fields: [blackPlayerId], references: [id])
+  blackPlayerId String?
+  createdAt     DateTime   @default(now())
+  moves         String?
+  gameDuration  Int?
+  gameType      GameType?
+  gameMode      GameMode?
+  status        GameStatus @default(PENDING)
+  result        String?
+  winningUser   String?
+  termination   String?
+}
+
+model Rating {
+  userId          String @id @unique
+  user             User     @relation("UserRating", fields: [userId], references: [id])  
+
+  lastBlitzGameDate DateTime?
+  blitzRating     Int    @default(1500)
+  blitzRD         Int    @default(250)
+  blitzVolatility Float  @default(0.06)
+
+  lastBulletGameDate DateTime?
+  bulletRating     Int   @default(1500)
+  bulletRD         Int   @default(250)
+  bulletVolatility Float @default(0.06)
+
+  lastRapidGameDate DateTime?
+  rapidRating     Int   @default(1500)
+  rapidRD         Int   @default(250)
+  rapidVolatility Float @default(0.06)
+}
+
+enum AuthMethod {
   EMAIL
   GOOGLE
 }
 
-model Game {
-  id         String   @id @default(uuid())
-  whitePlayer User?    @relation("WhitePlayer", fields: [whitePlayerId], references: [id])
-  whitePlayerId String?
-  blackPlayer User?    @relation("BlackPlayer", fields: [blackPlayerId], references: [id])
-  blackPlayerId String?
-  createdAt  DateTime @default(now())
-  moves      String?
-  gameDuration Int?
-  gameType String?
-  status GameStatus @default(PENDING)
-  result String?
-  winningUser String?
-  termination String?
+enum GameMode {
+  RATED
+  CASUAL
+}
+
+enum GameType {
+  BULLET
+  BLITZ
+  RAPID
+}
+
+enum ResultType {
+  WHITE
+  BLACK
+  DRAW
 }
 
 enum GameStatus {

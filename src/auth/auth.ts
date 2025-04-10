@@ -29,6 +29,20 @@ export const loginUser = async (email: string, password: string) => {
                 email: email,
                 authMethod: "EMAIL"
             }
+        },
+        select: {
+            id: true,
+            email: true,
+            username: true,
+            password: true,
+            ratings: {
+                select: {
+                    bulletRating: true,
+                    blitzRating: true,
+                    rapidRating: true
+                }
+            },
+            photoUrl: true
         }
     });
 
