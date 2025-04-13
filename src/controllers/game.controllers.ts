@@ -168,12 +168,31 @@ async function getGames(req: Request, res: Response) {
                     }
                 }
             }
-        })
+        });
+        const ratingHistory = await prismaClient.rating.findUnique({
+            where: {
+                userId: userId
+            },
+            select: {
+                bulletRatingHistory: true,
+                blitzRatingHistory: true,
+                rapidRatingHistory: true
+            }
+        });
 
         games.sort((gameA, gameB) => gameB.createdAt.getTime() - gameA.createdAt.getTime());
 
+        console.log("Ratings history", ratingHistory);
+
         console.log("Games: ", games);
-        if (games) res.status(200).json({ games: games });
+        if (games) res.status(200).json(
+            { 
+                games: games, 
+                blitzRatingHistory: ratingHistory?.blitzRatingHistory, 
+                bulletRatingHistory: ratingHistory?.bulletRatingHistory, 
+                rapidRatingHistory: ratingHistory?.rapidRatingHistory 
+            }
+        );
         else res.status(404).json({ error: "No games found" });
     } catch (error) {
         console.log("Error in game.contollers: ", error);
@@ -204,9 +223,11 @@ async function getPGN(req: Request, res: Response): Promise<void> {
             return;
         }
 
+        console.log("Game result before PGN gen: ", game.result);
+
         let result = "";
-        if (game.result === 'w') result = "1-0"
-        else if (game.result === 'b') result = "0-1"
+        if (game.result === 'WHITE') result = "1-0"
+        else if (game.result === 'BLACK') result = "0-1"
         else result = "1/2-1/2";
 
         let pgn = "";

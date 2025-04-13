@@ -19,11 +19,12 @@ import { deleteGameIfRequired } from './controllers/game.controllers.js';
 dotenv.config();
 
 const PORT = process.env.PORT || 3000;
+const IP = process.env.IP || "10.0.2.2";
 const app = express();
 const server = createServer(app);
 app.use(express.json());
 
-app.use(cors({ origin: "http://10.0.2.2:3000" }));
+app.use(cors({ origin: `http://${IP}:${PORT}` }));
 
 app.post('/v1/register', async (req, res) => {
     try {

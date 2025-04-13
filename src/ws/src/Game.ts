@@ -98,6 +98,7 @@ export class Game {
         from: string,
         to: string,
         piece: string,
+        promotion: string | null,
         queenSideCastle: Boolean,
         kingSideCastle: Boolean
     }, piece: string) {
@@ -110,8 +111,17 @@ export class Game {
 
         try {
             move.piece = piece;
-            this.board.move(move);
+            if (move.promotion != null) {
+                console.log("Move with promotion: " + move.promotion + " received");
+                this.board.move({ from: move.from, to: move.to, promotion: move.promotion });
+                console.log("Promotion: " + move.promotion + " done!");
+            }
+            else {
+                console.log("Move with promotion: [null] received");
+                this.board.move({ from: move.from, to: move.to });
+            }
             this.timerHandler();
+
 
             //Move is valid, can now cache it.
             let moveString = '';
@@ -330,14 +340,37 @@ export class Game {
             newRatings.newRatingWhite.rating = Math.ceil(newRatings.newRatingWhite.rating);
             newRatings.newRatingBlack.rating = Math.ceil(newRatings.newRatingBlack.rating);
 
+
+            //Modifying the history array
+            const rating1 = await prismaClient.rating.findUnique({ where: { userId: this.player1.id } });
+            const rating2 = await prismaClient.rating.findUnique({ where: { userId: this.player2.id } });
+            let history1 = [];
+            let history2 = [];
+            const gameTypeLower = this.gameType.toLowerCase();
+            const gameTypeCapitalized = this.gameType.charAt(0).toUpperCase() + this.gameType.slice(1).toLowerCase();
+            const historyField = `${gameTypeLower}RatingHistory`;
+            const lastGameDateField = `last${gameTypeCapitalized}GameDate`;
+            const newEntry1 = { rating: newRatings.newRatingWhite.rating, createdAt: new Date().toISOString() };
+            const newEntry2 = { rating: newRatings.newRatingBlack.rating, createdAt: new Date().toISOString() };
+            history1 = rating1 ? rating1.bulletRatingHistory : [];
+            history1 = [...history1, newEntry1];
+            history2 = rating2 ? rating2.bulletRatingHistory : [];
+            history2 = [...history2, newEntry2];
+
+            if (history1.length > 10) history1 = history1.slice(-10);
+            if (history2.length > 10) history2 = history2.slice(-10);
+
+
             await this.saveNewRatings(
                 {
+                    [historyField]: history1,
                     bulletRating: newRatings.newRatingWhite.rating,
                     bulletRD: newRatings.newRatingWhite.rd,
                     bulletVolatility: newRatings.newRatingWhite.volatility,
                     lastBulletGameDate: this.player1.ratings!.lastBulletGameDate,
                 },
                 {
+                    [historyField]: history2,
                     bulletRating: newRatings.newRatingBlack.rating,
                     bulletRD: newRatings.newRatingBlack.rd,
                     bulletVolatility: newRatings.newRatingBlack.volatility,
@@ -372,14 +405,35 @@ export class Game {
             newRatings.newRatingWhite.rating = Math.ceil(newRatings.newRatingWhite.rating);
             newRatings.newRatingBlack.rating = Math.ceil(newRatings.newRatingBlack.rating);
 
+            //Modifying the history array
+            const rating1 = await prismaClient.rating.findUnique({ where: { userId: this.player1.id } });
+            const rating2 = await prismaClient.rating.findUnique({ where: { userId: this.player2.id } });
+            let history1 = [];
+            let history2 = [];
+            const gameTypeLower = this.gameType.toLowerCase();
+            const gameTypeCapitalized = this.gameType.charAt(0).toUpperCase() + this.gameType.slice(1).toLowerCase();
+            const historyField = `${gameTypeLower}RatingHistory`;
+            const lastGameDateField = `last${gameTypeCapitalized}GameDate`;
+            const newEntry1 = { rating: newRatings.newRatingWhite.rating, createdAt: new Date().toISOString() };
+            const newEntry2 = { rating: newRatings.newRatingBlack.rating, createdAt: new Date().toISOString() };
+            history1 = rating1 ? rating1.blitzRatingHistory : [];
+            history1 = [...history1, newEntry1];
+            history2 = rating2 ? rating2.blitzRatingHistory : [];
+            history2 = [...history2, newEntry2];
+
+            if (history1.length > 10) history1 = history1.slice(-10);
+            if (history2.length > 10) history2 = history2.slice(-10);
+
             await this.saveNewRatings(
                 {
+                    [historyField]: history1,
                     blitzRating: newRatings.newRatingWhite.rating,
                     blitzRD: newRatings.newRatingWhite.rd,
                     blitzVolatility: newRatings.newRatingWhite.volatility,
                     lastBlitzGameDate: this.player1.ratings!.lastBlitzGameDate,
                 },
                 {
+                    [historyField]: history2,
                     blitzRating: newRatings.newRatingBlack.rating,
                     blitzRD: newRatings.newRatingBlack.rd,
                     blitzVolatility: newRatings.newRatingBlack.volatility,
@@ -414,14 +468,35 @@ export class Game {
             newRatings.newRatingWhite.rating = Math.ceil(newRatings.newRatingWhite.rating);
             newRatings.newRatingBlack.rating = Math.ceil(newRatings.newRatingBlack.rating);
 
+            //Modifying the history array
+            const rating1 = await prismaClient.rating.findUnique({ where: { userId: this.player1.id } });
+            const rating2 = await prismaClient.rating.findUnique({ where: { userId: this.player2.id } });
+            let history1 = [];
+            let history2 = [];
+            const gameTypeLower = this.gameType.toLowerCase();
+            const gameTypeCapitalized = this.gameType.charAt(0).toUpperCase() + this.gameType.slice(1).toLowerCase();
+            const historyField = `${gameTypeLower}RatingHistory`;
+            const lastGameDateField = `last${gameTypeCapitalized}GameDate`;
+            const newEntry1 = { rating: newRatings.newRatingWhite.rating, createdAt: new Date().toISOString() };
+            const newEntry2 = { rating: newRatings.newRatingBlack.rating, createdAt: new Date().toISOString() };
+            history1 = rating1 ? rating1.rapidRatingHistory : [];
+            history1 = [...history1, newEntry1];
+            history2 = rating2 ? rating2.rapidRatingHistory : [];
+            history2 = [...history2, newEntry2];
+
+            if (history1.length > 10) history1 = history1.slice(-10);
+            if (history2.length > 10) history2 = history2.slice(-10);
+
             await this.saveNewRatings(
                 {
+                    [historyField]: history1,
                     rapidRating: newRatings.newRatingWhite.rating,
                     rapidRD: newRatings.newRatingWhite.rd,
                     rapidVolatility: newRatings.newRatingWhite.volatility,
                     lastRapidGameDate: this.player1.ratings!.lastRapidGameDate,
                 },
                 {
+                    [historyField]: history2,
                     rapidRating: newRatings.newRatingBlack.rating,
                     rapidRD: newRatings.newRatingBlack.rd,
                     rapidVolatility: newRatings.newRatingBlack.volatility,

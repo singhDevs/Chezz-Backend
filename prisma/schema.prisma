@@ -51,16 +51,19 @@ model Rating {
   blitzRating     Int    @default(1500)
   blitzRD         Int    @default(250)
   blitzVolatility Float  @default(0.06)
+  blitzRatingHistory Json[]   @default([])
 
   lastBulletGameDate DateTime?
   bulletRating     Int   @default(1500)
   bulletRD         Int   @default(250)
   bulletVolatility Float @default(0.06)
+  bulletRatingHistory Json[]  @default([])
 
   lastRapidGameDate DateTime?
   rapidRating     Int   @default(1500)
   rapidRD         Int   @default(250)
   rapidVolatility Float @default(0.06)
+  rapidRatingHistory Json[]   @default([])
 }
 
 enum AuthMethod {
